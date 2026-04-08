@@ -1,10 +1,10 @@
 export interface User {
-  uid: string;
-  username: string;
-  displayName: string;
-  photoURL: string;
+  id: string;
+  name: string;
+  email: string;
+  photoURL?: string;
   bio?: string;
-  createdAt: number;
+  createdAt: string;
 }
 
 export interface Post {
@@ -16,7 +16,7 @@ export interface Post {
   caption: string;
   likesCount: number;
   commentsCount: number;
-  createdAt: number;
+  createdAt: string;
 }
 
 export interface Comment {
@@ -25,5 +25,13 @@ export interface Comment {
   authorUid: string;
   authorName: string;
   content: string;
-  createdAt: number;
+  createdAt: string;
+}
+
+export interface Message {
+  id: string;
+  fromUid: string;
+  toUid: string;
+  content: string;
+  createdAt: string;
 }

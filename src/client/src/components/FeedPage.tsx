@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Post } from '../types';
 import { PostCard } from '../components/PostCard';
 import { CreatePostModal } from '../components/CreatePostModal';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from './AuthContext';
 
 export const FeedPage = () => {
   const { user } = useAuth();

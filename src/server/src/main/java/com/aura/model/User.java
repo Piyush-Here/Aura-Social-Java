@@ -1,5 +1,6 @@
 package com.aura.model;
 
+import com.aura.controller.MessageController;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public class User {

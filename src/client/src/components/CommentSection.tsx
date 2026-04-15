@@ -1,167 +1,111 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from './AuthContext';
+import { useEffect, useState } from 'react';
+import { apiRequest } from '../lib/api';
+import type { Comment } from '../types';
 
-interface Comment {
-  id: string;
-  authorUid: string;
-  authorName: string;
-  content: string;
-  createdAt: string;
+interface CommentSectionProps {
+  postId: number;
 }
 
-export const CommentSection = ({ postId }: { postId: string }) => {
-  const { user } = useAuth();
-  const [open, setOpen] = useState(false);
+function formatTime(value: string): string {
+  return new Date(value).toLocaleString();
+}
+
+export function CommentSection({ postId }: CommentSectionProps) {
+  const [expanded, setExpanded] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
-  const [text, setText] = useState('');
+  const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState('');
 
-  // Fetch comments when panel opens
   useEffect(() => {
-    if (!open) return;
+    if (!expanded) {
+      return;
+    }
+
     setLoading(true);
-    fetch(`/api/posts/${postId}/comments`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setComments)
-      .finally(() => setLoading(false));
-  }, [open, postId]);
+    setError('');
 
-  // Focus input when panel opens
-  useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 100);
-  }, [open]);
+    apiRequest<Comment[]>(`/posts/${postId}/comments`)
+      .then(setComments)
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : 'Unable to load comments.');
+      })
+      .finally(() => setLoading(false));
+  }, [expanded, postId]);
 
   const submit = async () => {
-    if (!text.trim() || !user || submitting) return;
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      setError('Comment cannot be empty.');
+      return;
+    }
+
     setSubmitting(true);
+    setError('');
+
     try {
-      const res = await fetch(`/api/posts/${postId}/comments`, {
+      const created = await apiRequest<Comment>(`/posts/${postId}/comments`, {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text, authorName: user.name }),
+        body: JSON.stringify({ content: normalizedContent }),
       });
-      if (res.ok) {
-        const newComment = await res.json();
-        setComments(prev => [...prev, newComment]);
-        setText('');
-      }
+      setComments((current) => [...current, created]);
+      setContent('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to add comment.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const deleteComment = async (commentId: string) => {
-    await fetch(`/api/posts/${postId}/comments/${commentId}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
-    setComments(prev => prev.filter(c => c.id !== commentId));
-  };
-
-  const formatTime = (iso: string) => {
-    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (diff < 60) return `${diff}s`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
-  };
-
   return (
-    <div>
+    <section className="comment-section">
       <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: 13, color: '#888', padding: 0, marginTop: 4,
-        }}
+        className="text-button"
+        onClick={() => setExpanded((current) => !current)}
+        type="button"
       >
-        {open ? 'Hide comments' : `View comments`}
+        {expanded ? 'Hide comments' : 'View comments'}
       </button>
 
-      {open && (
-        <div style={{ marginTop: 12 }}>
-          {/* Comment list */}
-          {loading ? (
-            <p style={{ fontSize: 12, color: '#aaa' }}>Loading…</p>
-          ) : comments.length === 0 ? (
-            <p style={{ fontSize: 12, color: '#bbb' }}>No comments yet.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-              {comments.map(c => (
-                <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <div style={{
-                    width: 24, height: 24, borderRadius: '50%',
-                    background: '#eee', flexShrink: 0,
-                    display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: 10, fontWeight: 600,
-                  }}>
-                    {c.authorName?.[0]?.toUpperCase() || '?'}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{c.authorName} </span>
-                    <span style={{ fontSize: 13 }}>{c.content}</span>
-                    <div style={{ display: 'flex', gap: 12, marginTop: 2 }}>
-                      <span style={{ fontSize: 11, color: '#aaa' }}>{formatTime(c.createdAt)}</span>
-                      {user?.id === c.authorUid && (
-                        <button
-                          onClick={() => deleteComment(c.id)}
-                          style={{
-                            background: 'none', border: 'none',
-                            fontSize: 11, color: '#ccc', cursor: 'pointer', padding: 0,
-                          }}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+      {expanded && (
+        <div className="stack-sm">
+          {loading && <p className="muted-text">Loading comments...</p>}
+          {!loading && comments.length === 0 && <p className="muted-text">No comments yet.</p>}
 
-          {/* Add comment input */}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', borderTop: '0.5px solid #f0f0f0', paddingTop: 10 }}>
-            <div style={{
-              width: 24, height: 24, borderRadius: '50%',
-              background: '#111', color: '#fff', flexShrink: 0,
-              display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontSize: 10, fontWeight: 600,
-            }}>
-              {user?.name?.[0]?.toUpperCase() || 'U'}
-            </div>
+          {comments.map((comment) => (
+            <article className="comment-item" key={comment.id}>
+              <div>
+                <strong>{comment.authorDisplayName}</strong>
+                <p>{comment.content}</p>
+              </div>
+              <time>{formatTime(comment.createdAt)}</time>
+            </article>
+          ))}
+
+          <div className="comment-compose">
             <input
-              ref={inputRef}
-              value={text}
-              onChange={e => setText(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && submit()}
-              placeholder="Add a comment…"
-              style={{
-                flex: 1, border: 'none', outline: 'none',
-                fontSize: 13, background: 'transparent',
-                fontFamily: 'inherit',
+              value={content}
+              onChange={(event) => {
+                setContent(event.target.value);
+                setError('');
               }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+              placeholder="Write a comment"
             />
-            {text.trim() && (
-              <button
-                onClick={submit}
-                disabled={submitting}
-                style={{
-                  background: 'none', border: 'none',
-                  fontSize: 13, fontWeight: 600,
-                  color: submitting ? '#aaa' : '#000', cursor: 'pointer',
-                  padding: 0,
-                }}
-              >
-                Post
-              </button>
-            )}
+            <button className="button subtle" disabled={submitting} onClick={() => void submit()} type="button">
+              Post
+            </button>
           </div>
+
+          {error && <div className="form-banner error">{error}</div>}
         </div>
       )}
-    </div>
+    </section>
   );
-};
+}

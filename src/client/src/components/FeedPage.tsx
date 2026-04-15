@@ -1,91 +1,75 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Post } from '../types';
-import { PostCard } from '../components/PostCard';
-import { CreatePostModal } from '../components/CreatePostModal';
-import { useAuth } from './AuthContext';
+import { useEffect, useState } from 'react';
+import { ApiError, apiRequest } from '../lib/api';
+import type { Post } from '../types';
+import { CreatePostModal } from './CreatePostModal';
+import { PostCard } from './PostCard';
 
-export const FeedPage = () => {
-  const { user } = useAuth();
+export function FeedPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const createOpen = searchParams.get('create') === '1';
+  const [error, setError] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
 
-  const fetchPosts = async () => {
+  const loadPosts = async () => {
     try {
-      const res = await fetch('/api/posts', { credentials: 'include' });
-      if (res.ok) setPosts(await res.json());
-    } catch (err) {
-      console.error('Fetch posts failed:', err);
+      const response = await apiRequest<Post[]>('/posts');
+      setPosts(response);
+      setError('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load feed.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPosts();
-    // Poll every 15s for new posts
-    const interval = setInterval(fetchPosts, 15_000);
-    return () => clearInterval(interval);
+    void loadPosts();
   }, []);
 
-  const handleLike = async (postId: string) => {
-    try {
-      const res = await fetch(`/api/posts/${postId}/like`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setPosts(prev => prev.map(p => p.id === postId ? updated : p));
-      }
-    } catch (err) {
-      console.error('Like failed:', err);
-    }
-  };
-
-  const handleCreatePost = async (imageUrl: string, caption: string) => {
-    const res = await fetch('/api/posts', {
+  const handleCreate = async (imageUrl: string | null, caption: string) => {
+    const created = await apiRequest<Post>('/posts', {
       method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageUrl, caption }),
     });
-    if (!res.ok) throw new Error('Failed to create post');
-    const newPost = await res.json();
-    setPosts(prev => [newPost, ...prev]);
+    setPosts((current) => [created, ...current]);
   };
 
-  const closeModal = () => {
-    searchParams.delete('create');
-    setSearchParams(searchParams);
+  const handleLike = async (postId: number) => {
+    const updated = await apiRequest<Post>(`/posts/${postId}/like`, { method: 'POST' });
+    setPosts((current) => current.map((post) => (post.id === postId ? updated : post)));
   };
 
   return (
-    <main style={{ maxWidth: 480, margin: '0 auto', padding: '24px 16px' }}>
+    <main className="page-container stack-lg">
+      <section className="hero-strip">
+        <div>
+          <p className="eyebrow">Feed</p>
+          <h1>People, posts, and conversations in one place.</h1>
+        </div>
+        <button className="button primary" onClick={() => setCreateOpen(true)} type="button">
+          Create post
+        </button>
+      </section>
+
+      {error && <div className="form-banner error">{error}</div>}
+
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>
-          Loading feed…
-        </div>
+        <div className="card empty-card">Loading posts...</div>
       ) : posts.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 80 }}>
-          <p style={{ color: '#bbb', fontSize: 14 }}>No posts yet.</p>
-          <p style={{ color: '#aaa', fontSize: 12, marginTop: 8 }}>
-            Be the first to share something.
-          </p>
-        </div>
+        <div className="card empty-card">No posts yet. Start the feed with your first post.</div>
       ) : (
-        posts.map(post => (
-          <PostCard key={post.id} post={post} onLike={handleLike} />
-        ))
+        <div className="stack-md">
+          {posts.map((post) => (
+            <PostCard key={post.id} onLike={handleLike} post={post} />
+          ))}
+        </div>
       )}
 
       <CreatePostModal
         isOpen={createOpen}
-        onClose={closeModal}
-        onSubmit={handleCreatePost}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleCreate}
       />
     </main>
   );
-};
+}

@@ -1,69 +1,40 @@
 package com.aura.controller;
 
-import com.aura.model.User;
-import com.aura.service.UserStore;
-import jakarta.servlet.http.HttpSession;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
-import java.util.Map;
-import java.util.UUID;
+import com.aura.dto.auth.AuthRequest;
+import com.aura.dto.auth.AuthResponse;
+import com.aura.dto.auth.RegisterRequest;
+import com.aura.dto.user.UserResponse;
+import com.aura.service.AuthService;
+import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final UserStore userStore;
+    private final AuthService authService;
 
-    public AuthController(UserStore userStore) {
-        this.userStore = userStore;
+    public AuthController(AuthService authService) {
+        this.authService = authService;
     }
 
-    @PostMapping("/signup")
-    public User signup(@RequestBody Map<String, String> body,
-                       HttpSession session) {
-        String email = body.get("email");
-        if (email == null || email.isBlank())
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email required");
-        if (userStore.findByEmail(email) != null)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already taken");
-
-        User user = new User(
-            UUID.randomUUID().toString(),
-            body.get("name"),
-            email,
-            body.get("password")  // TODO: hash with BCrypt in production
-        );
-        userStore.save(user);
-        session.setAttribute("userId", user.getId());
-        return user.toPublicView();
+    @PostMapping("/register")
+    public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
+        return authService.register(request);
     }
 
     @PostMapping("/login")
-    public User login(@RequestBody Map<String, String> body,
-                      HttpSession session) {
-        User user = userStore.findByEmail(body.get("email"));
-        if (user == null || !user.getPassword().equals(body.get("password")))
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
-
-        session.setAttribute("userId", user.getId());
-        return user.toPublicView();
-    }
-
-    @PostMapping("/logout")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void logout(HttpSession session) {
-        session.invalidate();
+    public AuthResponse login(@Valid @RequestBody AuthRequest request) {
+        return authService.login(request);
     }
 
     @GetMapping("/me")
-    public User me(HttpSession session) {
-        String uid = (String) session.getAttribute("userId");
-        if (uid == null)
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
-        User user = userStore.findById(uid);
-        if (user == null)
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Session expired");
-        return user.toPublicView();
+    public UserResponse me(Authentication authentication) {
+        return authService.currentUser(authentication.getName());
     }
 }

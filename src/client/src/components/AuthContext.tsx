@@ -1,40 +1,42 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  photoURL?: string;
-  bio?: string;
-}
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
+import { apiRequest, storeToken } from '../lib/api';
+import type { AuthResponse, User } from '../types';
 
 interface AuthContextType {
-  user: AuthUser | null;
+  user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string) => Promise<void>;
-  logout: () => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  signup: (username: string, displayName: string, password: string) => Promise<void>;
+  logout: () => void;
   refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-export const useAuth = (): AuthContextType => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
-};
+export function useAuth(): AuthContextType {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used inside AuthProvider');
+  }
+  return context;
+}
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<AuthUser | null>(null);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshUser = async () => {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
-      if (res.ok) setUser(await res.json());
-      else setUser(null);
+      const currentUser = await apiRequest<User>('/auth/me');
+      setUser(currentUser);
     } catch {
+      storeToken(null);
       setUser(null);
     }
   };
@@ -43,36 +45,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     refreshUser().finally(() => setLoading(false));
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const res = await fetch('/api/auth/login', {
+  const login = async (username: string, password: string) => {
+    const response = await apiRequest<AuthResponse>('/auth/login', {
       method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     });
-    if (!res.ok) {
-      const msg = await res.text();
-      throw new Error(msg || 'Login failed');
-    }
-    setUser(await res.json());
+    storeToken(response.token);
+    setUser(response.user);
   };
 
-  const signup = async (email: string, password: string, name: string) => {
-    const res = await fetch('/api/auth/signup', {
+  const signup = async (username: string, displayName: string, password: string) => {
+    const response = await apiRequest<AuthResponse>('/auth/register', {
       method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ username, displayName, password }),
     });
-    if (!res.ok) {
-      const msg = await res.text();
-      throw new Error(msg || 'Signup failed');
-    }
-    setUser(await res.json());
+    storeToken(response.token);
+    setUser(response.user);
   };
 
-  const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  const logout = () => {
+    storeToken(null);
     setUser(null);
   };
 
@@ -81,4 +73,4 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </AuthContext.Provider>
   );
-};
+}

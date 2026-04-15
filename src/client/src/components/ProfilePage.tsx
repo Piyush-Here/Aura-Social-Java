@@ -1,274 +1,173 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { apiRequest } from '../lib/api';
+import type { Post, User } from '../types';
 import { useAuth } from './AuthContext';
-import { Post } from '../types';
 
-interface ProfileUser {
-  id: string;
-  name: string;
-  email: string;
-  photoURL?: string;
-  bio?: string;
-  createdAt: string;
-}
-
-export const ProfilePage = () => {
-  const { uid } = useParams<{ uid: string }>();
-  const { user: currentUser, refreshUser } = useAuth();
+export function ProfilePage() {
+  const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
-  const isOwner = currentUser?.id === uid;
-
-  const [profile, setProfile] = useState<ProfileUser | null>(null);
+  const { user: currentUser, refreshUser } = useAuth();
+  const [profile, setProfile] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [bio, setBio] = useState('');
-  const [photoURL, setPhotoURL] = useState('');
-  const [editingBio, setEditingBio] = useState(false);
-  const [editingPhoto, setEditingPhoto] = useState(false);
+  const [draft, setDraft] = useState({ displayName: '', bio: '', photoUrl: '' });
+  const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  const isOwner = currentUser?.username === username;
+
   useEffect(() => {
-    if (!uid) return;
+    if (!username) {
+      return;
+    }
+
     setLoading(true);
-    setError('');
-
     Promise.all([
-      fetch(`/api/users/${uid}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
-      fetch(`/api/posts?authorUid=${uid}`, { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+      apiRequest<User>(`/users/${username}`),
+      apiRequest<Post[]>(`/posts?username=${encodeURIComponent(username)}`),
     ])
-      .then(([profileData, postsData]) => {
-        if (!profileData) { setError('User not found'); return; }
-        setProfile(profileData);
-        setBio(profileData.bio || '');
-        setPhotoURL(profileData.photoURL || '');
-        setPosts(postsData);
+      .then(([profileResponse, postResponse]) => {
+        setProfile(profileResponse);
+        setPosts(postResponse);
+        setDraft({
+          displayName: profileResponse.displayName,
+          bio: profileResponse.bio || '',
+          photoUrl: profileResponse.photoUrl || '',
+        });
+        setError('');
       })
-      .catch(() => setError('Failed to load profile'))
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : 'Unable to load profile.');
+      })
       .finally(() => setLoading(false));
-  }, [uid]);
+  }, [username]);
 
-  const saveBio = async () => {
-    if (!uid) return;
+  const saveProfile = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/users/${uid}/bio`, {
+      const updated = await apiRequest<User>('/users/me', {
         method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bio }),
+        body: JSON.stringify({
+          displayName: draft.displayName.trim(),
+          bio: draft.bio.trim(),
+          photoUrl: draft.photoUrl.trim(),
+        }),
       });
-      if (res.ok) {
-        const updated = await res.json();
-        setProfile(updated);
-        setEditingBio(false);
-        refreshUser();
-      }
+      setProfile(updated);
+      setEditing(false);
+      await refreshUser();
+      setError('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to save profile.');
     } finally {
       setSaving(false);
     }
   };
 
-  const savePhoto = async () => {
-    if (!uid) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/users/${uid}/photo`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoURL }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setProfile(updated);
-        setEditingPhoto(false);
-        refreshUser();
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
+  if (loading) {
+    return <main className="page-container"><div className="card empty-card">Loading profile...</div></main>;
+  }
 
-  if (loading) return (
-    <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 13 }}>
-      Loading profile…
-    </div>
-  );
-
-  if (error || !profile) return (
-    <div style={{ textAlign: 'center', padding: 80 }}>
-      <p style={{ color: '#E24B4A', fontSize: 14 }}>{error || 'User not found'}</p>
-      <button onClick={() => navigate(-1)}
-        style={{ marginTop: 16, background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 13 }}>
-        ← Go back
-      </button>
-    </div>
-  );
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 12px',
-    border: '0.5px solid #ddd', borderRadius: 8,
-    fontSize: 13, outline: 'none', fontFamily: 'inherit',
-  };
+  if (!profile) {
+    return <main className="page-container"><div className="card empty-card">Profile not found.</div></main>;
+  }
 
   return (
-    <main style={{ maxWidth: 640, margin: '0 auto', padding: '32px 16px' }}>
-      {/* Profile header */}
-      <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 32,
-        marginBottom: 40, paddingBottom: 32,
-        borderBottom: '0.5px solid #ececec',
-      }}>
-        {/* Avatar */}
-        <div style={{ flexShrink: 0 }}>
-          {profile.photoURL ? (
-            <img src={profile.photoURL} alt={profile.name}
-              style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
-          ) : (
-            <div style={{
-              width: 80, height: 80, borderRadius: '50%',
-              background: '#111', color: '#fff',
-              display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontSize: 28, fontWeight: 600,
-            }}>
-              {profile.name[0]?.toUpperCase()}
-            </div>
-          )}
-          {isOwner && (
-            <button onClick={() => setEditingPhoto(p => !p)}
-              style={{
-                marginTop: 6, width: '100%', background: 'none',
-                border: '0.5px solid #ddd', borderRadius: 6,
-                fontSize: 11, padding: '4px 0', cursor: 'pointer', color: '#666',
-              }}>
-              Edit photo
-            </button>
-          )}
-        </div>
-
-        {/* Info */}
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>{profile.name}</h2>
-            {!isOwner && (
-              <button
-                onClick={() => navigate(`/messages/${profile.id}`)}
-                style={{
-                  padding: '6px 16px', background: '#000', color: '#fff',
-                  border: 'none', borderRadius: 8, fontSize: 12,
-                  fontWeight: 500, cursor: 'pointer',
-                }}
-              >
-                Message
-              </button>
-            )}
-          </div>
-
-          <p style={{ fontSize: 13, color: '#888', margin: '0 0 12px' }}>
-            {posts.length} {posts.length === 1 ? 'post' : 'posts'}
-          </p>
-
-          {/* Bio */}
-          {editingBio ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <textarea
-                value={bio}
-                onChange={e => setBio(e.target.value)}
-                rows={3}
-                placeholder="Write a bio…"
-                style={{ ...inputStyle, resize: 'none' }}
-              />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={saveBio} disabled={saving}
-                  style={{
-                    padding: '6px 14px', background: '#000', color: '#fff',
-                    border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                  }}>
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
-                <button onClick={() => { setEditingBio(false); setBio(profile.bio || ''); }}
-                  style={{
-                    padding: '6px 14px', background: 'none',
-                    border: '0.5px solid #ddd', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                  }}>
-                  Cancel
-                </button>
+    <main className="page-container stack-lg">
+      <section className="card profile-card">
+        <div className="profile-header">
+          <div className="avatar-large">{profile.displayName.charAt(0).toUpperCase()}</div>
+          <div className="stack-sm profile-copy">
+            <div className="profile-line">
+              <div>
+                <h1>{profile.displayName}</h1>
+                <p className="muted-text">@{profile.username}</p>
               </div>
-            </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: bio ? '#111' : '#bbb' }}>
-                {bio || (isOwner ? 'Add a bio…' : '')}
-              </p>
-              {isOwner && (
-                <button onClick={() => setEditingBio(true)}
-                  style={{
-                    marginTop: 8, background: 'none', border: 'none',
-                    fontSize: 12, color: '#888', cursor: 'pointer', padding: 0,
-                  }}>
-                  {bio ? 'Edit bio' : '+ Add bio'}
+              {!isOwner && (
+                <button
+                  className="button subtle"
+                  onClick={() => navigate(`/messages/${profile.username}`)}
+                  type="button"
+                >
+                  Message
                 </button>
               )}
             </div>
-          )}
+            <p>{profile.bio || 'No bio yet.'}</p>
+          </div>
+        </div>
 
-          {/* Photo URL editor */}
-          {editingPhoto && isOwner && (
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <input
-                type="text"
-                value={photoURL}
-                onChange={e => setPhotoURL(e.target.value)}
-                placeholder="Photo URL…"
-                style={inputStyle}
-              />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={savePhoto} disabled={saving}
-                  style={{
-                    padding: '6px 14px', background: '#000', color: '#fff',
-                    border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                  }}>
-                  {saving ? 'Saving…' : 'Save photo'}
-                </button>
-                <button onClick={() => setEditingPhoto(false)}
-                  style={{
-                    padding: '6px 14px', background: 'none',
-                    border: '0.5px solid #ddd', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                  }}>
-                  Cancel
-                </button>
+        {isOwner && (
+          <div className="stack-sm">
+            {!editing ? (
+              <button className="button ghost" onClick={() => setEditing(true)} type="button">
+                Edit profile
+              </button>
+            ) : (
+              <div className="stack-sm profile-editor">
+                <label className="field">
+                  <span>Display name</span>
+                  <input
+                    value={draft.displayName}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, displayName: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Bio</span>
+                  <textarea
+                    rows={3}
+                    value={draft.bio}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, bio: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Photo URL</span>
+                  <input
+                    value={draft.photoUrl}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, photoUrl: event.target.value }))
+                    }
+                  />
+                </label>
+                <div className="row-end">
+                  <button className="button ghost" onClick={() => setEditing(false)} type="button">
+                    Cancel
+                  </button>
+                  <button className="button primary" disabled={saving} onClick={() => void saveProfile()} type="button">
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+        )}
 
-      {/* Post grid */}
-      {posts.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>
-          <p style={{ color: '#bbb', fontSize: 14 }}>
-            {isOwner ? 'You haven't posted yet.' : 'No posts yet.'}
-          </p>
+        {error && <div className="form-banner error">{error}</div>}
+      </section>
+
+      <section className="stack-md">
+        <div className="section-heading">
+          <h2>Posts</h2>
+          <span className="muted-text">{posts.length}</span>
         </div>
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 3,
-        }}>
-          {posts.map(post => (
-            <div key={post.id} style={{ position: 'relative', aspectRatio: '1', overflow: 'hidden', cursor: 'pointer' }}>
-              <img
-                src={post.imageUrl}
-                alt={post.caption}
-                referrerPolicy="no-referrer"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+        {posts.length === 0 ? (
+          <div className="card empty-card">No posts published yet.</div>
+        ) : (
+          <div className="profile-posts">
+            {posts.map((post) => (
+              <Link className="profile-post" key={post.id} to="/">
+                {post.imageUrl ? <img alt={post.caption} src={post.imageUrl} /> : <div>{post.caption}</div>}
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
-};
+}

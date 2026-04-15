@@ -1,123 +1,157 @@
-import React, { useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ApiError } from '../lib/api';
 import { useAuth } from './AuthContext';
 
-export const AuthForm = () => {
-  const { login, signup } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+type Mode = 'login' | 'signup';
 
-  const handleSubmit = async (e: React.SyntheticEvent) => {
-    e.preventDefault();
+function normalizeUsername(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function AuthForm() {
+  const navigate = useNavigate();
+  const { login, signup } = useAuth();
+  const [mode, setMode] = useState<Mode>('login');
+  const [form, setForm] = useState({ username: '', displayName: '', password: '' });
+  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  const title = useMemo(
+    () => (mode === 'login' ? 'Sign in with your username' : 'Create a new profile'),
+    [mode]
+  );
+
+  const updateField = (key: 'username' | 'displayName' | 'password', value: string) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => ({ ...current, [key]: '' }));
     setError('');
-    setLoading(true);
-    try {
-      if (isLogin) {
-        await login(email, password);
-      } else {
-        if (!name.trim()) { setError('Name is required'); return; }
-        await signup(email, password, name);
+  };
+
+  const validate = (): boolean => {
+    const nextErrors: Record<string, string> = {};
+    const username = normalizeUsername(form.username);
+
+    if (!username) {
+      nextErrors.username = 'Username is required.';
+    } else if (!/^[a-z0-9_.-]{3,50}$/.test(username)) {
+      nextErrors.username = 'Use 3-50 lowercase letters, numbers, dot, underscore, or hyphen.';
+    }
+
+    if (mode === 'signup') {
+      if (!form.displayName.trim()) {
+        nextErrors.displayName = 'Display name is required.';
+      } else if (form.displayName.trim().length > 120) {
+        nextErrors.displayName = 'Display name must be 120 characters or less.';
       }
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+    }
+
+    if (!form.password) {
+      nextErrors.password = 'Password is required.';
+    } else if (form.password.length < 6) {
+      nextErrors.password = 'Password must be at least 6 characters.';
+    }
+
+    setFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!validate()) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+
+    try {
+      const username = normalizeUsername(form.username);
+      if (mode === 'login') {
+        await login(username, form.password);
+      } else {
+        await signup(username, form.displayName.trim(), form.password);
+      }
+      navigate('/', { replace: true });
+    } catch (caught) {
+      const apiError = caught instanceof ApiError ? caught : new ApiError('Unable to continue.');
+      setError(apiError.message);
+      setFieldErrors(apiError.fieldErrors);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '12px 14px',
-    border: '0.5px solid #ddd', borderRadius: 8,
-    fontSize: 14, background: '#fafafa',
-    outline: 'none', transition: 'border-color 0.15s',
-    fontFamily: 'inherit',
-  };
-
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex',
-      alignItems: 'center', justifyContent: 'center',
-      background: '#f9f9f9',
-    }}>
-      <div style={{
-        width: 360, background: '#fff',
-        border: '0.5px solid #ececec',
-        borderRadius: 16, padding: '48px 36px',
-      }}>
-        <div style={{ marginBottom: 40, textAlign: 'center' }}>
-          <h1 style={{
-            fontFamily: 'Playfair Display, serif',
-            fontSize: 36, fontWeight: 700,
-            letterSpacing: '-0.03em', margin: 0,
-          }}>Aura</h1>
-          <p style={{ fontSize: 13, color: '#888', marginTop: 8 }}>
-            {isLogin ? 'Welcome back' : 'Create your account'}
-          </p>
+    <div className="auth-layout">
+      <section className="auth-card">
+        <div className="auth-hero">
+          <p className="eyebrow">Aura Social</p>
+          <h1>Java full-stack social app</h1>
+          <p>{title}</p>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {!isLogin && (
+        <form className="stack-md" onSubmit={handleSubmit} noValidate>
+          <label className="field">
+            <span>Username</span>
             <input
-              type="text"
-              placeholder="Your name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              style={inputStyle}
-              required
+              value={form.username}
+              onChange={(event) => updateField('username', event.target.value)}
+              placeholder="username"
+              autoComplete="username"
             />
-          )}
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={inputStyle}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={inputStyle}
-            required
-          />
+            {fieldErrors.username && <small className="field-error">{fieldErrors.username}</small>}
+          </label>
 
-          {error && (
-            <p style={{ fontSize: 12, color: '#E24B4A', margin: 0, paddingLeft: 4 }}>
-              {error}
-            </p>
+          {mode === 'signup' && (
+            <label className="field">
+              <span>Display name</span>
+              <input
+                value={form.displayName}
+                onChange={(event) => updateField('displayName', event.target.value)}
+                placeholder="Your public name"
+                autoComplete="name"
+              />
+              {fieldErrors.displayName && (
+                <small className="field-error">{fieldErrors.displayName}</small>
+              )}
+            </label>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              marginTop: 8, width: '100%', padding: '12px',
-              background: loading ? '#888' : '#000', color: '#fff',
-              border: 'none', borderRadius: 8, fontSize: 14,
-              fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'background 0.15s',
-            }}
-          >
-            {loading ? 'Please wait…' : isLogin ? 'Sign in' : 'Create account'}
+          <label className="field">
+            <span>Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) => updateField('password', event.target.value)}
+              placeholder="Minimum 6 characters"
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            />
+            {fieldErrors.password && <small className="field-error">{fieldErrors.password}</small>}
+          </label>
+
+          {error && <div className="form-banner error">{error}</div>}
+
+          <button className="button primary" disabled={submitting} type="submit">
+            {submitting ? 'Working...' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
         </form>
 
         <button
-          onClick={() => { setIsLogin(l => !l); setError(''); }}
-          style={{
-            marginTop: 20, width: '100%', background: 'none',
-            border: 'none', fontSize: 13, color: '#666',
-            cursor: 'pointer', textAlign: 'center',
+          className="text-button"
+          onClick={() => {
+            setMode((current) => (current === 'login' ? 'signup' : 'login'));
+            setError('');
+            setFieldErrors({});
           }}
+          type="button"
         >
-          {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+          {mode === 'login'
+            ? 'Need an account? Switch to sign up.'
+            : 'Already registered? Switch to sign in.'}
         </button>
-      </div>
+      </section>
     </div>
   );
-};
+}

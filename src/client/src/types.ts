@@ -1,18 +1,29 @@
+export interface ApiErrorShape {
+  status?: number;
+  message?: string;
+  errors?: Record<string, string>;
+}
+
 export interface User {
-  id: string;
-  name: string;
-  email: string;
-  photoURL?: string;
-  bio?: string;
+  id: number;
+  username: string;
+  displayName: string;
+  bio: string | null;
+  photoUrl: string | null;
   createdAt: string;
 }
 
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
+
 export interface Post {
-  id: string;
-  authorUid: string;
-  authorName: string;
-  authorPhoto: string;
-  imageUrl: string;
+  id: number;
+  authorUsername: string;
+  authorDisplayName: string;
+  authorPhotoUrl: string | null;
+  imageUrl: string | null;
   caption: string;
   likesCount: number;
   commentsCount: number;
@@ -20,18 +31,26 @@ export interface Post {
 }
 
 export interface Comment {
-  id: string;
-  postId: string;
-  authorUid: string;
-  authorName: string;
+  id: number;
+  postId: number;
+  authorUsername: string;
+  authorDisplayName: string;
   content: string;
   createdAt: string;
 }
 
 export interface Message {
-  id: string;
-  fromUid: string;
-  toUid: string;
+  id: number;
+  senderUsername: string;
+  recipientUsername: string;
   content: string;
   createdAt: string;
+}
+
+export interface ConversationSummary {
+  username: string;
+  displayName: string;
+  photoUrl: string | null;
+  lastMessage: string;
+  lastMessageAt: string;
 }
